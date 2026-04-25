@@ -12,7 +12,10 @@ tickers_input = st.sidebar.text_area(
     'Edit Tickers (comma-separated)',
     value='^dji, ^rut, ^ixic, vtsax, fcntx, ponax, ORCL, MSFT,',
     height=100,
-    help='Enter stock tickers separated by commas. Some common indexes include the DJIA (^DJI), S&P 500 (^GSPC), Russell 2000 (^RUT), and NASDAQ (^IXIC). E.g. ^dji, ^rut, ^ixic, vtsax, fcntx, ponax, ORCL, MSFT,'
+    help='''Enter stock tickers separated by commas. Some common indexes
+            include the DJIA (^DJI), S&P 500 (^GSPC), Russell 2000 (^RUT), 
+            and NASDAQ (^IXIC). E.g. ^dji, ^rut, ^ixic, vtsax, fcntx,
+            ponax, ORCL, MSFT,'''
 )
 
 # Parse tickers from input
@@ -23,7 +26,12 @@ if not tickers:
     st.stop()
 
 # Define market index for beta calculation
-market_input = st.sidebar.text_input('Baseline Index', value='^GSPC', help='Enter the ticker for the baseline index. Common ones: ^GSPC (S&P 500), ^DJI (Dow Jones), ^IXIC (NASDAQ), ^RUT (Russell 2000)')
+market_input = st.sidebar.text_input(
+    'Baseline Index', value='^GSPC', 
+    help='''Enter the ticker for the baseline index. 
+            Common ones: ^GSPC (S&P 500), ^DJI (Dow Jones), 
+            ^IXIC (NASDAQ), ^RUT (Russell 2000)'''
+)
 market = market_input.upper()
 
 # Time period selection
