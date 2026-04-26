@@ -10,7 +10,7 @@ st.set_page_config(page_title="Stock Performance Tracker")
 st.sidebar.header('Configuration')
 tickers_input = st.sidebar.text_area(
     'Edit Tickers (comma-separated)',
-    value='^dji, ^rut, ^ixic, vtsax, fcntx, ponax, ORCL, MSFT,',
+    value='^dji, ^rut, ^ixic, \nvtsax, fcntx, ponax, \nORCL, MSFT,',
     height=100,
     help='''Enter stock tickers separated by commas. Some common indexes
             include the DJIA (^DJI), S&P 500 (^GSPC), Russell 2000 (^RUT), 
