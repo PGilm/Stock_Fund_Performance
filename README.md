@@ -1,4 +1,4 @@
-# Stock Performance Dashboard
+# Stock and Fund Performance Dashboard
 
 A simple Streamlit app showing the normalized returns of different indexes, funds or stocks, including rolling risk metrics and category-based peer fund lookup with manual overrides.
 
