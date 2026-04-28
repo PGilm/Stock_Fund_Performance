@@ -3,12 +3,15 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
+from platformdirs import user_config_dir
 import streamlit as st
 import yfinance as yf
 
 st.set_page_config(page_title="Stock Performance Tracker")
 
-STATE_FILE = Path(__file__).with_name("pgStocks_state.json")
+APP_NAME = "pgStocks"
+LEGACY_STATE_FILE = Path(__file__).with_name("pgStocks_state.json")
+STATE_FILE = Path(user_config_dir(APP_NAME, APP_NAME)) / "state.json"
 TRADING_DAYS_PER_YEAR = 252
 ROLLING_WINDOW = 30
 MAX_AUTO_PEERS = 10
@@ -28,11 +31,12 @@ DEFAULT_STATE = {
 
 
 def load_saved_state():
-    if not STATE_FILE.exists():
+    state_file = STATE_FILE if STATE_FILE.exists() else LEGACY_STATE_FILE
+    if not state_file.exists():
         return DEFAULT_STATE.copy()
 
     try:
-        saved_state = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+        saved_state = json.loads(state_file.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return DEFAULT_STATE.copy()
 
@@ -43,6 +47,7 @@ def load_saved_state():
 
 def save_state(state):
     try:
+        STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
         STATE_FILE.write_text(json.dumps(state, indent=2), encoding="utf-8")
     except OSError as exc:
         st.sidebar.warning(f"Could not save local settings: {exc}")
@@ -208,10 +213,16 @@ def fetch_security_metadata(ticker):
 
     try:
         instrument = yf.Ticker(ticker)
-        info = instrument.info or {}
     except Exception as exc:
         metadata["error"] = str(exc)
         return metadata
+
+    info = {}
+    info_error = None
+    try:
+        info = instrument.info or {}
+    except Exception as exc:
+        info_error = str(exc)
 
     metadata["name"] = _first_present(
         info, ("longName", "shortName", "displayName", "name")
@@ -226,10 +237,12 @@ def fetch_security_metadata(ticker):
     if metadata["category"] and metadata["family"]:
         return metadata
 
+    fund_overview_error = None
     try:
         fund_overview = instrument.funds_data.fund_overview or {}
-    except Exception:
+    except Exception as exc:
         fund_overview = {}
+        fund_overview_error = str(exc)
 
     metadata["category"] = metadata["category"] or _first_present(
         fund_overview, ("categoryName", "category")
@@ -237,6 +250,12 @@ def fetch_security_metadata(ticker):
     metadata["family"] = metadata["family"] or _first_present(
         fund_overview, ("family", "fundFamily")
     )
+
+    if not metadata["category"] and not metadata["family"]:
+        error_messages = [message for message in (info_error, fund_overview_error) if message]
+        if error_messages:
+            metadata["error"] = " | ".join(error_messages)
+
     return metadata
 
 
@@ -595,51 +614,10 @@ if peer_source:
             peer for peer in auto_peers if peer["Ticker"] not in excluded
         ][:peer_count]
 
-peer_panel = st.container()
-with peer_panel:
-    st.subheader("Peer Funds")
-    if not peer_source:
-        st.info("Enter a fund ticker in Peer Source Fund to discover same-category peers.")
-    elif peer_source_metadata and peer_source_metadata["error"]:
-        st.warning(
-            f"Could not load fund metadata for {peer_source}: {peer_source_metadata['error']}"
-        )
-    else:
-        category_label = (
-            peer_source_metadata["category"] if peer_source_metadata else None
-        ) or "N/A"
-        fund_name = (peer_source_metadata["name"] if peer_source_metadata else None) or peer_source
-        family_label = (
-            peer_source_metadata["family"] if peer_source_metadata else None
-        ) or "N/A"
-        st.caption(
-            f"Peer source: {peer_source} ({fund_name}) | Category: {category_label} | Family: {family_label}"
-        )
-        if auto_peers:
-            st.caption(
-                f"Showing {len(auto_peers)} automatic peers for a target of {requested_auto_peer_count}. "
-                "The list keeps providers distinct where possible and leans toward larger AUM."
-            )
-            if peer_lookup_note:
-                st.caption(peer_lookup_note)
-        elif enable_auto_peers and not peer_lookup_error:
-            st.caption(
-                f"No automatic peers were available for a target of {requested_auto_peer_count}."
-            )
-        if peer_lookup_error and enable_auto_peers:
-            st.info(f"Automatic peer lookup is unavailable right now: {peer_lookup_error}")
-
-        peer_table = build_peer_table(manual_peers, auto_peers, peer_source)
-        if peer_table.empty:
-            st.info("No peers to show yet. Add manual peers or enable category-based discovery.")
-        else:
-            st.dataframe(peer_table, width="stretch", hide_index=True)
-
 comparison_tickers = list(tickers)
 if include_peers_in_chart:
     comparison_tickers = dedupe_tickers(
         comparison_tickers
-        + ([peer_source] if peer_source else [])
         + manual_peers
         + [peer["Ticker"] for peer in auto_peers]
     )
@@ -763,6 +741,47 @@ try:
             )
     metrics_df = pd.DataFrame(metrics_data)
     st.dataframe(metrics_df, width="stretch")
+
+    st.subheader("Peer Funds")
+    if not peer_source:
+        st.info("Enter a fund ticker in Peer Source Fund to discover same-category peers.")
+    elif peer_source_metadata and peer_source_metadata["error"]:
+        st.warning(
+            f"Could not load fund metadata for {peer_source}: {peer_source_metadata['error']}"
+        )
+    else:
+        category_label = (
+            peer_source_metadata["category"] if peer_source_metadata else None
+        ) or "N/A"
+        fund_name = (
+            (peer_source_metadata["name"] if peer_source_metadata else None)
+            or peer_source
+        )
+        family_label = (
+            peer_source_metadata["family"] if peer_source_metadata else None
+        ) or "N/A"
+        st.caption(
+            f"Peer source: {peer_source} ({fund_name}) | Category: {category_label} | Family: {family_label}"
+        )
+        if auto_peers:
+            st.caption(
+                f"Showing {len(auto_peers)} automatic peers for a target of {requested_auto_peer_count}. "
+                "The list keeps providers distinct where possible and leans toward larger AUM."
+            )
+            if peer_lookup_note:
+                st.caption(peer_lookup_note)
+        elif enable_auto_peers and not peer_lookup_error:
+            st.caption(
+                f"No automatic peers were available for a target of {requested_auto_peer_count}."
+            )
+        if peer_lookup_error and enable_auto_peers:
+            st.info(f"Automatic peer lookup is unavailable right now: {peer_lookup_error}")
+
+        peer_table = build_peer_table(manual_peers, auto_peers, peer_source)
+        if peer_table.empty:
+            st.info("No peers to show yet. Add manual peers or enable category-based discovery.")
+        else:
+            st.dataframe(peer_table, width="stretch", hide_index=True)
 
     st.subheader("Normalized Price Data")
     st.dataframe(prices_norm[comparison_tickers], width="stretch")
